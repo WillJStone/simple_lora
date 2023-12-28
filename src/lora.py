@@ -15,11 +15,16 @@ class LinearLora(nn.Module):
     def __init__(self, linear_layer: nn.Module, lora_rank: int, lora_alpha: float):
         super().__init__()
         self.linear_layer = linear_layer
+        device = linear_layer.weight.device
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
 
-        self.A = nn.Parameter(torch.zeros(self.linear_layer.weight.shape[0], self.lora_rank))
-        self.B = nn.Parameter(torch.zeros(self.lora_rank, self.linear_layer.weight.shape[1]))
+        self.A = nn.Parameter(
+            torch.zeros(self.linear_layer.weight.shape[0], self.lora_rank)
+        ).to(device)
+        self.B = nn.Parameter(
+            torch.zeros(self.lora_rank, self.linear_layer.weight.shape[1])
+        ).to(device)
 
         self.merged = False
         self.linear_layer.weight.requires_grad = False
@@ -28,15 +33,22 @@ class LinearLora(nn.Module):
         if self.merged:
             return
 
-        self.linear_layer.weight += nn.Parameter(self.A @ self.B) * self.lora_alpha
+        self.linear_layer.weight.data += nn.Parameter(self.A @ self.B) * self.lora_alpha
         self.merged = True
 
     def unmerge(self):
         if not self.merged:
             return
 
-        self.linear_layer.weight -= nn.Parameter(self.A @ self.B) * self.lora_alpha
+        self.linear_layer.weight.data -= nn.Parameter(self.A @ self.B) * self.lora_alpha
         self.merged = False
+
+    def train(self, mode=True):
+        super().train(mode)
+        if mode:
+            self.unmerge()
+        else:
+            self.merge()
 
     def forward(self, x: Tensor) -> Tensor:
         if self.training and not self.merged:
