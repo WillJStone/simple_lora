@@ -23,7 +23,6 @@ class LoraExpert(nn.Module):
         return weights + self.A @ self.B * self.lora_alpha
 
 
-
 class MoLoraLayer(nn.Module):
     """
     Modified from Mistral's MoE implementation
@@ -39,18 +38,18 @@ class MoLoraLayer(nn.Module):
     def forward(self, inputs: torch.Tensor):
         inputs_squashed = inputs.view(-1, inputs.shape[-1])
         gate_logits = self.gate(inputs_squashed)
-        weights, selected_experts = torch.topk(
+        expert_weights, selected_experts = torch.topk(
             gate_logits, self.args.num_experts_per_tok
         )
-        weights = nn.functional.softmax(
-            weights,
+        expert_weights = nn.functional.softmax(
+            expert_weights,
             dim=1,
             dtype=torch.float,
         ).type_as(inputs)
         results = torch.zeros_like(inputs_squashed)
         for i, expert in enumerate(self.experts):
             batch_idx, nth_expert = torch.where(selected_experts == i)
-            results[batch_idx] += weights[batch_idx, nth_expert, None] * expert(
+            results[batch_idx] += expert_weights[batch_idx, nth_expert, None] * expert(
                 inputs_squashed[batch_idx]
             )
         return results.view_as(inputs)
