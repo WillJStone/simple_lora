@@ -16,7 +16,7 @@ class MoLoRAArgs:
     lora_alpha: float
 
 
-class MistralMoeLayer(nn.Module):
+class MistralMoLoraLayer(nn.Module):
     def __init__(self, feed_forward: nn.Module, gate: nn.Module, args: MoLoRAArgs):
         super().__init__()
         self.feed_forward = feed_forward
@@ -65,5 +65,5 @@ class MistralMoeLayer(nn.Module):
             results[batch_idx] += weights[batch_idx, nth_expert, None] * self.expert_forward(
                 inputs[batch_idx], expert_idx
             )
-            
+
         return results
