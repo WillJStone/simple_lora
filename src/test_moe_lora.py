@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-from src.moe_lora import MistralMoLoraLayer, MoLoRAArgs, replace_layers
+from moe_lora import MistralMoLoraLayer, MoLoRAArgs, replace_layers
 
 
 if __name__ == "__main__":
@@ -13,6 +13,6 @@ if __name__ == "__main__":
 
     replace_layers(model, mistral_mlp_type, MistralMoLoraLayer, args)
 
-    model.cuda()
-    text_generator = pipeline("text-generation", model=model, tokenizer=tokenizer, device=0)
+    model.to("cuda:2")
+    text_generator = pipeline("text-generation", model=model, tokenizer=tokenizer, device=2)
     print(text_generator("The meaning of life is", max_length=50, do_sample=True, temperature=0.9))

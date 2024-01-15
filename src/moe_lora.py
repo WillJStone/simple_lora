@@ -31,12 +31,12 @@ class MistralMoLoraLayer(nn.Module):
         in_dim = feed_forward.up_proj.weight.shape[1]
         hidden_dim = feed_forward.up_proj.weight.shape[0]
         dtype = feed_forward.up_proj.weight.dtype
-        self.A1 = nn.Parameter(torch.zeros(self.num_experts, in_dim, self.lora_rank, dtype=dtype))
-        self.B1 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, hidden_dim, dtype=dtype))
-        self.A2 = nn.Parameter(torch.zeros(self.num_experts, in_dim, self.lora_rank, dtype=dtype))
-        self.B2 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, hidden_dim, dtype=dtype))
-        self.A3 = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
-        self.B3 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
+        self.A1 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
+        self.B1 = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
+        self.A2 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, hidden_dim, dtype=dtype))
+        self.B2 = nn.Parameter(torch.zeros(self.num_experts, in_dim, self.lora_rank, dtype=dtype))
+        self.A3 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
+        self.B3 = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
 
         nn.init.kaiming_uniform_(self.A1, a=math.sqrt(5))
         nn.init.zeros_(self.B1)
@@ -49,9 +49,9 @@ class MistralMoLoraLayer(nn.Module):
         """
         Does the same forward pass as FeedForward, but with the adapted weights
         """
-        w1_prime = self.feed_forward.up_proj.weight.data + self.lora_alpha * self.A1[expert_idx] @ self.B1[expert_idx]
-        w2_prime = self.feed_forward.down_proj.weight.data + self.lora_alpha * self.A2[expert_idx] @ self.B2[expert_idx]
-        w3_prime = self.feed_forward.gat_proj.weight.data + self.lora_alpha * self.A3[expert_idx] @ self.B3[expert_idx]
+        w1_prime = self.feed_forward.up_proj.weight.data + self.lora_alpha * self.B1[expert_idx] @ self.A1[expert_idx]
+        w2_prime = self.feed_forward.down_proj.weight.data + self.lora_alpha * self.B2[expert_idx] @ self.A2[expert_idx]
+        w3_prime = self.feed_forward.gate_proj.weight.data + self.lora_alpha * self.B3[expert_idx] @ self.A3[expert_idx]
 
         hidden = F.silu(F.linear(inputs, w1_prime))
         hidden = hidden * F.linear(inputs, w3_prime)
@@ -64,9 +64,9 @@ class MistralMoLoraLayer(nn.Module):
         weights = F.softmax(weights, dim=1, dtype=torch.float).to(inputs.dtype)
         results = torch.zeros_like(inputs)
         for expert_idx in range(self.num_experts):
-            batch_idx, nth_expert = torch.where(selected_experts == expert_idx)
-            results[batch_idx] += weights[batch_idx, nth_expert, None] * self.expert_forward(
-                inputs[batch_idx], expert_idx
+            batch_idx, token_idx, nth_expert = torch.where(selected_experts == expert_idx)
+            results[batch_idx, token_idx] += weights[batch_idx, token_idx, nth_expert, None] * self.expert_forward(
+                inputs[batch_idx, token_idx], expert_idx
             )
 
         return results
