@@ -31,27 +31,27 @@ class MistralMoLoraLayer(nn.Module):
         in_dim = feed_forward.up_proj.weight.shape[1]
         hidden_dim = feed_forward.up_proj.weight.shape[0]
         dtype = feed_forward.up_proj.weight.dtype
-        self.A1 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
-        self.B1 = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
-        self.A2 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, hidden_dim, dtype=dtype))
-        self.B2 = nn.Parameter(torch.zeros(self.num_experts, in_dim, self.lora_rank, dtype=dtype))
-        self.A3 = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
-        self.B3 = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
+        self.up_A = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
+        self.up_B = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
+        self.down_A = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, hidden_dim, dtype=dtype))
+        self.down_B = nn.Parameter(torch.zeros(self.num_experts, in_dim, self.lora_rank, dtype=dtype))
+        self.gate_A = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
+        self.gate_B = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
 
-        nn.init.kaiming_uniform_(self.A1, a=math.sqrt(5))
-        nn.init.zeros_(self.B1)
-        nn.init.kaiming_uniform_(self.A2, a=math.sqrt(5))
-        nn.init.zeros_(self.B2)
-        nn.init.kaiming_uniform_(self.A3, a=math.sqrt(5))
-        nn.init.zeros_(self.B3)
+        nn.init.kaiming_uniform_(self.up_A, a=math.sqrt(5))
+        nn.init.zeros_(self.up_B)
+        nn.init.kaiming_uniform_(self.down_A, a=math.sqrt(5))
+        nn.init.zeros_(self.down_B)
+        nn.init.kaiming_uniform_(self.gate_A, a=math.sqrt(5))
+        nn.init.zeros_(self.gate_B)
 
     def expert_forward(self, inputs: torch.Tensor, expert_idx: int):
         """
         Does the same forward pass as FeedForward, but with the adapted weights
         """
-        w1_prime = self.feed_forward.up_proj.weight.data + self.lora_alpha * self.B1[expert_idx] @ self.A1[expert_idx]
-        w2_prime = self.feed_forward.down_proj.weight.data + self.lora_alpha * self.B2[expert_idx] @ self.A2[expert_idx]
-        w3_prime = self.feed_forward.gate_proj.weight.data + self.lora_alpha * self.B3[expert_idx] @ self.A3[expert_idx]
+        w1_prime = self.feed_forward.up_proj.weight.data + self.lora_alpha * self.up_B[expert_idx] @ self.up_A[expert_idx]
+        w2_prime = self.feed_forward.down_proj.weight.data + self.lora_alpha * self.down_B[expert_idx] @ self.down_A[expert_idx]
+        w3_prime = self.feed_forward.gate_proj.weight.data + self.lora_alpha * self.gate_B[expert_idx] @ self.gate_A[expert_idx]
 
         hidden = F.silu(F.linear(inputs, w1_prime))
         hidden = hidden * F.linear(inputs, w3_prime)
