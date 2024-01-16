@@ -21,16 +21,18 @@ class MoLoRAArgs:
 class MistralMoLoraLayer(nn.Module):
     def __init__(self, feed_forward: nn.Module, gate: nn.Module, args: MoLoRAArgs):
         super().__init__()
-        self.feed_forward = feed_forward
         self.gate = gate
         self.num_experts = args.num_experts
         self.num_experts_per_tok = args.num_experts_per_tok
         self.lora_rank = args.lora_rank
         self.lora_alpha = args.lora_alpha
 
-        in_dim = feed_forward.up_proj.weight.shape[1]
-        hidden_dim = feed_forward.up_proj.weight.shape[0]
-        dtype = feed_forward.up_proj.weight.dtype
+        self.up_weight = nn.Parameter(feed_forward.up_proj.weight.data, requires_grad=False)
+        self.down_weight = nn.Parameter(feed_forward.down_proj.weight.data, requires_grad=False)
+        self.gate_weight = nn.Parameter(feed_forward.gate_proj.weight.data, requires_grad=False)
+        in_dim = self.up_weight.shape[1]
+        hidden_dim = self.up_weight.shape[0]
+        dtype = self.up_weight.dtype
         self.up_A = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, in_dim, dtype=dtype))
         self.up_B = nn.Parameter(torch.zeros(self.num_experts, hidden_dim, self.lora_rank, dtype=dtype))
         self.down_A = nn.Parameter(torch.zeros(self.num_experts, self.lora_rank, hidden_dim, dtype=dtype))
@@ -49,14 +51,14 @@ class MistralMoLoraLayer(nn.Module):
         """
         Does the same forward pass as FeedForward, but with the adapted weights
         """
-        w1_prime = self.feed_forward.up_proj.weight.data + self.lora_alpha * self.up_B[expert_idx] @ self.up_A[expert_idx]
-        w2_prime = self.feed_forward.down_proj.weight.data + self.lora_alpha * self.down_B[expert_idx] @ self.down_A[expert_idx]
-        w3_prime = self.feed_forward.gate_proj.weight.data + self.lora_alpha * self.gate_B[expert_idx] @ self.gate_A[expert_idx]
+        up_weight = self.up_weight + self.lora_alpha * self.up_B[expert_idx] @ self.up_A[expert_idx]
+        down_weight = self.down_weight + self.lora_alpha * self.down_B[expert_idx] @ self.down_A[expert_idx]
+        gate_weight = self.gate_weight + self.lora_alpha * self.gate_B[expert_idx] @ self.gate_A[expert_idx]
 
-        hidden = F.silu(F.linear(inputs, w1_prime))
-        hidden = hidden * F.linear(inputs, w3_prime)
+        hidden = F.silu(F.linear(inputs, up_weight))
+        hidden = hidden * F.linear(inputs, gate_weight)
 
-        return F.linear(hidden, w2_prime)
+        return F.linear(hidden, down_weight)
 
     def forward(self, inputs: torch.Tensor):
         gate_logits = self.gate(inputs)
